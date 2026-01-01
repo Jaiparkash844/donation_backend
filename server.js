@@ -14,7 +14,26 @@ const app = express();
 
 // Middleware
 app.use(express.json());
-app.use(cors());
+// --- CORS CONFIGURATION ---
+const allowedOrigins = [
+    "http://localhost:5173", // Vite default port
+    "http://localhost:3000", // React default port
+    "https://your-frontend-project.vercel.app" // APNA VERCEL URL YAHAN DALAIN
+];
+
+app.use(cors({
+    origin: function (origin, callback) {
+        // Agar origin list mein hai ya origin null hai (like Postman), toh allow karein
+        if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            callback(new Error('CORS Policy: This origin is not allowed access.'));
+        }
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"]
+}));
 
 // Error Handling for Invalid JSON
 app.use((err, req, res, next) => {
