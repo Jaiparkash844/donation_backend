@@ -7,10 +7,12 @@ dotenv.config();
 
 const app = express();
 
-/* ================= MongoDB CONFIG ================= */
+/* ================= MongoDB FIX ================= */
 
+// Disable mongoose buffering (VERY IMPORTANT)
 mongoose.set("bufferCommands", false);
 
+// Global cached connection (Vercel serverless fix)
 let cached = global.mongoose;
 if (!cached) {
   cached = global.mongoose = { conn: null, promise: null };
@@ -25,8 +27,15 @@ async function connectDB() {
     });
   }
 
-  cached.conn = await cached.promise;
-  console.log("✅ MongoDB Connected");
+  try {
+    cached.conn = await cached.promise;
+    console.log("✅ MongoDB Connected");
+  } catch (err) {
+    cached.promise = null;
+    console.error("❌ MongoDB Connection Failed:", err.message);
+    throw err;
+  }
+
   return cached.conn;
 }
 
@@ -46,7 +55,7 @@ app.use((err, req, res, next) => {
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:5173",
-  "https://donation-beta-one.vercel.app"
+  "https://donation-beta-one.vercel.app",
 ];
 
 app.use(
@@ -66,8 +75,9 @@ app.use(
 
 async function startServer() {
   try {
-    await connectDB(); // 🔥 IMPORTANT FIX
+    await connectDB(); // 🔥 Fix: wait for DB before registering routes
 
+    /* ================= Routes ================= */
     const authRoutes = require("./routes/web/authRoutes");
     const donationRoutes = require("./routes/web/donationRoutes");
     const campaignRoutes = require("./routes/web/campaignRoutes");
@@ -78,11 +88,12 @@ async function startServer() {
     app.use("/api/campaigns", campaignRoutes);
     app.use("/api/admin", adminRoutes);
 
+    /* ================= Health Check ================= */
     app.get("/", (req, res) => {
       res.json({ status: "API running" });
     });
 
-    // Local only
+    // Local server
     if (process.env.NODE_ENV !== "production") {
       const PORT = process.env.PORT || 5000;
       app.listen(PORT, () =>
