@@ -1,0 +1,8 @@
+Method,Endpoint,Description,Access
+POST,/api/auth/register,Create new user,Public
+POST,/api/auth/login,Get JWT Token,Public
+GET,/api/campaigns,List all active relief funds,Public
+POST,/api/donations,Submit a new donation,Private (User)
+GET,/api/donations/my,User's donation history,Private (User)
+POST,/api/campaigns/new,Create a new relief fund,Private (Admin)
+PUT,/api/donations/:id,Change status (Pending -> Verified),Private (Admin)
