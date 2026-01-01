@@ -12,28 +12,29 @@ const adminRoutes = require("./routes/admin/adminRoutes");
 dotenv.config();
 const app = express();
 
-// Middleware
-app.use(express.json());
-// --- CORS CONFIGURATION ---
+// --- 1. FIXED CORS CONFIGURATION ---
 const allowedOrigins = [
-    "http://localhost:5173", // Vite default port
-    "http://localhost:3000", // React default port
-    "https://your-frontend-project.vercel.app" // APNA VERCEL URL YAHAN DALAIN
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "https://your-frontend-project.vercel.app" // Isse apne asli frontend URL se badal dein
 ];
 
 app.use(cors({
     origin: function (origin, callback) {
-        // Agar origin list mein hai ya origin null hai (like Postman), toh allow karein
-        if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-            callback(null, true);
-        } else {
-            callback(new Error('CORS Policy: This origin is not allowed access.'));
+        // Allow requests with no origin (like mobile apps or curl/postman)
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.indexOf(origin) === -1) {
+            const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+            return callback(new Error(msg), false);
         }
+        return callback(null, true);
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"]
 }));
+
+app.use(express.json());
 
 // Error Handling for Invalid JSON
 app.use((err, req, res, next) => {
@@ -43,29 +44,44 @@ app.use((err, req, res, next) => {
     next();
 });
 
-// MongoDB Connection (Global scope me rakha hai for Vercel optimization)
-let isConnected = false;
+// --- 2. OPTIMIZED DB CONNECTION (Serverless Friendly) ---
 const connectDB = async () => {
-    if (isConnected) return;
+    // Agar pehle se connected hai (readyState 1), toh naya connection na banayein
+    if (mongoose.connection.readyState >= 1) return;
+
     try {
-        await mongoose.connect(process.env.MONGO_URI);
-        isConnected = true;
+        await mongoose.connect(process.env.MONGO_URI, {
+            useNewUrlParser: true,
+            useUnifiedTopology: true,
+            serverSelectionTimeoutMS: 5000, // Connection ke liye zyada wait na karein
+        });
         console.log("✅ MongoDB Connected");
     } catch (err) {
-        console.log("❌ DB Connection Error:", err);
+        console.error("❌ DB Connection Error:", err.message);
+        // Serverless mein error throw karna zaroori hai taaki request fail ho, "buffer" na ho
+        throw new Error("Database connection failed");
     }
 };
 
-// Routes
-app.use('/api/auth', async (req, res, next) => { await connectDB(); next(); }, authRoutes);
-app.use('/api/donations', async (req, res, next) => { await connectDB(); next(); }, donationRoutes);
-app.use('/api/campaigns', async (req, res, next) => { await connectDB(); next(); }, campaignRoutes);
-app.use('/api/admin', async (req, res, next) => { await connectDB(); next(); }, adminRoutes);
+// Routes Middleware with Error Handling
+const dbMiddleware = async (req, res, next) => {
+    try {
+        await connectDB();
+        next();
+    } catch (err) {
+        res.status(500).json({ error: "Database connection error" });
+    }
+};
+
+app.use('/api/auth', dbMiddleware, authRoutes);
+app.use('/api/donations', dbMiddleware, donationRoutes);
+app.use('/api/campaigns', dbMiddleware, campaignRoutes);
+app.use('/api/admin', dbMiddleware, adminRoutes);
 
 // Health Check Route
-app.get("/", (req, res) => res.send("Donation Hub API is running..."));
+app.get("/", (req, res) => res.send("🚀 Donation Hub API is running..."));
 
-// Local Server for localhost development
+// Local Server
 if (process.env.NODE_ENV !== 'production') {
     const PORT = process.env.PORT || 5000;
     app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
