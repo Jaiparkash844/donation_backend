@@ -16,7 +16,7 @@ const app = express();
 const allowedOrigins = [
     "http://localhost:5173",
     "http://localhost:3000",
-    "https://your-frontend-project.vercel.app" // Isse apne asli frontend URL se badal dein
+    "https://donation-beta-one.vercel.app" // Isse apne asli frontend URL se badal dein
 ];
 
 app.use(cors({
