@@ -64,7 +64,7 @@ app.use((err, req, res, next) => {
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:5173",
-  process.env.FRONTEND_URL,
+   "https://donation-beta-one.vercel.app"
 ];
 
 app.use(
