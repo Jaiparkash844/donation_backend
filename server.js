@@ -3,45 +3,107 @@ const dotenv = require("dotenv");
 const cors = require("cors");
 const mongoose = require("mongoose");
 
-// Route Imports
+dotenv.config();
+
+const app = express();
+
+/* ================= MongoDB FIX ================= */
+
+// Disable mongoose buffering (VERY IMPORTANT)
+mongoose.set("bufferCommands", false);
+
+// Global cached connection (Vercel serverless fix)
+let cached = global.mongoose;
+if (!cached) {
+  cached = global.mongoose = { conn: null, promise: null };
+}
+
+const connectDB = async () => {
+  if (cached.conn) {
+    return cached.conn;
+  }
+
+  if (!cached.promise) {
+    cached.promise = mongoose
+      .connect(process.env.MONGO_URI, {
+        serverSelectionTimeoutMS: 5000,
+      })
+      .then((mongoose) => {
+        console.log("✅ MongoDB Connected");
+        return mongoose;
+      });
+  }
+
+  try {
+    cached.conn = await cached.promise;
+  } catch (err) {
+    cached.promise = null;
+    console.error("❌ MongoDB Connection Failed:", err.message);
+    throw err;
+  }
+
+  return cached.conn;
+};
+
+// Connect DB
+connectDB();
+
+/* ================= Middleware ================= */
+
+app.use(express.json());
+
+app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && "body" in err) {
+    return res.status(400).json({ message: "Invalid JSON format" });
+  }
+  next();
+});
+
+/* ================= CORS ================= */
+
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:5173",
+  process.env.FRONTEND_URL,
+];
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true,
+  })
+);
+
+/* ================= Routes ================= */
+
 const authRoutes = require("./routes/web/authRoutes");
 const donationRoutes = require("./routes/web/donationRoutes");
 const campaignRoutes = require("./routes/web/campaignRoutes");
 const adminRoutes = require("./routes/admin/adminRoutes");
 
-dotenv.config();
-const app = express();
+app.use("/api/auth", authRoutes);
+app.use("/api/donations", donationRoutes);
+app.use("/api/campaigns", campaignRoutes);
+app.use("/api/admin", adminRoutes);
 
-// --- CORS ---
-app.use(cors({
-    origin: ["http://localhost:5173", "https://donation-beta-one.vercel.app"],
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"]
-}));
+/* ================= Health Check (Optional) ================= */
+app.get("/", (req, res) => {
+  res.json({ status: "API running" });
+});
 
-app.use(express.json());
-
-// --- DIRECT DATABASE CONNECTION ---
-// Vercel par isse global variable mein rakhna behtar hai taaki bar bar naya connection na bane
-const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://jaip4182_db_user:513HoaqM4rvk0ccl@cluster0.loia550.mongodb.net/donation";
-
-mongoose.connect(MONGO_URI)
-    .then(() => console.log("✅ MongoDB Connected Successfully"))
-    .catch((err) => console.error("❌ MongoDB Connection Failed:", err.message));
-
-// --- ROUTES ---
-app.use('/api/auth', authRoutes);
-app.use('/api/donations', donationRoutes);
-app.use('/api/campaigns', campaignRoutes);
-app.use('/api/admin', adminRoutes);
-
-app.get("/", (req, res) => res.send("🚀 Donation Hub API is Live"));
-
-// --- SERVER LISTEN ---
-if (process.env.NODE_ENV !== 'production') {
-    const PORT = process.env.PORT || 5000;
-    app.listen(PORT, () => console.log(`🚀 Local Server: http://localhost:${PORT}`));
-}
-
+/* ================= Export for Vercel ================= */
 module.exports = app;
+
+/* ================= Local Server ================= */
+if (process.env.NODE_ENV !== "production") {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running at http://localhost:${PORT}`);
+  });
+}
